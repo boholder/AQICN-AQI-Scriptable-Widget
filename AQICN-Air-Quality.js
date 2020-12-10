@@ -20,13 +20,26 @@
  * Based on code by Matt Silverlock.
  */
 
+// Aqicn json format query api url
 const API_URL = "https://api.waqi.info/feed/"
 
-const CITY = `city_name_or_city_id, example: name: "tokyo", id: "@928"`
+// City name or city id, example: name: "london", london's city id: "@5724".
+// Get city id from browsing <https://aqicn.org/city/city_name_lowercase>,
+// goto "Download the real-time Air Quality Index Widget for:" column,
+// click "iPhone & iPad" button, city id is in the popup's text.
+const CITY = `cityNameOrCityId`
 
 // You need to register a token for free with your email to call the API.
 // <https://aqicn.org/data-platform/token/>
-const TOKEN = "your-token"
+const TOKEN = "yourToken"
+
+// If you are in a network environment where the API cannot be requested,
+// set the request response waiting time (in seconds) from the Apple Widget 
+// to end the request awaiting early.
+var queryTimeOut = 60;
+if (args.widgetParameter) {
+  queryTimeOut = args.widgetParameter;
+}
 
 /**
  * Widget attributes: AQI level threshold, text label, gradient start and end colors, text color
@@ -88,48 +101,76 @@ function cacheData(fileName, data) {
  */
 async function getAqiData(city) {
   const cacheFileName = `${city}-data.json`;
-  const req = new Request(`${API_URL}${city}/?token=${TOKEN}`);
-  let json = await req.loadJSON();
+  let json = await requestJsonWithTimeOut(`${API_URL}${city}/?token=${TOKEN}`);
   try {
     // Check that our results are what we expect
-    const responseLooksGood = json && json.status === "ok"
+    const responseLooksGood = json && json.status === "ok";
     if (responseLooksGood) {
       console.log("INFO: Response data looks good, will cache.")
       cacheDataToFile();
+    } else if (json) {
+      console.log(`WARNING: Response shows error:`);
+      console.log({ json });
+      useCachedData();
     } else {
-      console.log(`WARNING: Response shows error:\n${json}\n----------`)
+      // request timed out
       useCachedData();
     }
-    return constructDataForWidget();
+
+    let data = constructDataForWidget();
+    console.log(`INFO: Data for widget constructed successed:`);
+    console.log({ data });
+    return data;
+
   } catch (error) {
     console.log(`ERROR: Could not parse JSON: ${error}`);
     throw 666;
   }
 
+  // Note that Request() is API of Scriptable App,
+  // <https://docs.scriptable.app/request/#timeoutinterval>
+  // not <https://developer.mozilla.org/zh-CN/docs/Web/API/Request/Request>
+  async function requestJsonWithTimeOut(url) {
+    try {
+      let request = new Request(url);
+      request.timeoutInterval = queryTimeOut;
+      let json = await request.loadJSON();
+      return json;
+    } catch (error) {
+      console.log(`WARNING: Request timed out while timeout set to ${queryTimeOut} seconds, 
+        return {} as response result.`);
+      return {};
+    };
+  }
+  function useCachedData() {
+    const { json: cachedJson, updatedAt } = getCachedData(cacheFileName);
+    let twoHours = 2 * 60 * 60 * 1000;
+    let cacheDate = new Date(updatedAt);
+    if (Date.now() - cacheDate > twoHours) {
+      // Bail if our data is > 2 hours old
+      throw `ERROR: Our cache is too old: ${cacheDate}`;
+    }
+    console.log(`INFO: Using cached data, cache time: ${cacheDate}`);
+    json = cachedJson;
+  }
+
+  function cacheDataToFile() {
+    const cityData = { json, updatedAt: Date.now() };
+    cacheData(cacheFileName, cityData);
+  }
+
   function constructDataForWidget() {
     const data = json.data;
+
+    console.log("INFO: Using data collected by sensor at:");
+    console.log(data.time.iso);
     return {
       aqi: data.aqi,
       city_name: data.city.name,
       geo_lat: data.city.geo[0],
       geo_lon: data.city.geo[1],
-      time_stamp: data.time.v,
+      time_stamp: data.time.iso,
     }
-  }
-
-  function useCachedData() {
-    const { json: cachedJson, updatedAt } = getCachedData(cacheFileName)
-    if (Date.now() - updatedAt > 2 * 60 * 60 * 1000) {
-      // Bail if our data is > 2 hours old
-      throw `Our cache is too old: ${updatedAt}`
-    }
-    console.log(`INFO: Using cached sensor data: ${updatedAt}`)
-    json = cachedJson
-  }
-
-  function cacheDataToFile() {
-    const cityData = { json, updatedAt: Date.now() }
-    cacheData(cacheFileName, cityData)
   }
 }
 
@@ -182,7 +223,6 @@ async function getGeoData(lat, lon) {
 
 /** 
  * @type {Array<LevelAttribute>} sorted by threshold desc. 
- * 不用改，和中国标准也对标
  */
 const LEVEL_ATTRIBUTES = [
   {
@@ -250,7 +290,6 @@ const LEVEL_ATTRIBUTES = [
 /**
  * Calculates the AQI level
  * based on https://cfpub.epa.gov/airnow/index.cfm?action=aqibasics.aqi#unh
- * 不用改
  *
  * @param {number|'-'} aqi
  * @returns {LevelAttribute & { level: number }}
@@ -284,7 +323,7 @@ function calculateLevel(aqi) {
 
 /**
  * Constructs an SFSymbol from the given symbolName
- * SFSymbol 是 Scriptable 本身的API
+ * SFSymbol is Scriptable's API
  * @param {string} symbolName
  * @returns {object} SFSymbol
  */
@@ -295,7 +334,7 @@ function createSymbol(symbolName) {
 }
 
 /**
- * 主程序入口
+ * main program
  */
 async function run() {
   const listWidget = new ListWidget();
@@ -303,22 +342,17 @@ async function run() {
 
   try {
     const cityId = CITY;
-
     if (!cityId) {
       throw "Please specify a city in script for this widget.";
     }
     console.log(`INFO: Using city ID: ${cityId}`);
 
     const data = await getAqiData(cityId);
-    console.log("INFO: Data for widget constructed successed.")
 
     const aqi = data.aqi
-    const level = calculateLevel(aqi);
     const aqiText = aqi.toString();
-    console.log({ aqi });
-
+    const level = calculateLevel(aqi);
     const cityLocation = await getLocation(data)
-    console.log({ cityLocation: cityLocation });
 
     renderWidgetBackgroudGradient(level)
     setWidgetText(level, aqiText, cityLocation, data)
@@ -398,7 +432,6 @@ async function run() {
       hour: "numeric",
       minute: "2-digit",
     })
-    console.log(`INFO: Data collected at: ${updatedAt}`)
     const widgetText = listWidget.addText(`Updated ${updatedAt}`)
     widgetText.textColor = textColor
     widgetText.font = Font.regularSystemFont(9)
@@ -412,7 +445,6 @@ async function run() {
     const gradient = new LinearGradient()
     gradient.colors = [startColor, endColor]
     gradient.locations = [0.0, 1]
-    // console.log({ gradient })
     listWidget.backgroundGradient = gradient
   }
 }
