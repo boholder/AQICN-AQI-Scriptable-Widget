@@ -55,43 +55,248 @@ if (args.widgetParameter) {
  * @property {string} darkTextColor
  */
 
-/**
- * Get JSON from a local file
- *
- * @param {string} fileName
- * @returns {object}
+/** 
+ * @type {Array<LevelAttribute>} sorted by threshold desc. 
  */
-function getCachedData(fileName) {
-  const fileManager = FileManager.local();
-  const cacheDirectory = fileManager.joinPath(fileManager.libraryDirectory(), "aqicn");
-  const cacheFile = fileManager.joinPath(cacheDirectory, fileName);
+const LEVEL_ATTRIBUTES = [
+  {
+    threshold: 300,
+    label: "Hazardous",
+    startColor: "76205d",
+    endColor: "521541",
+    textColor: "f0f0f0",
+    darkStartColor: "333333",
+    darkEndColor: "000000",
+    darkTextColor: "ce4ec5",
+  },
+  {
+    threshold: 200,
+    label: "Very Unhealthy",
+    startColor: "9c2424",
+    endColor: "661414",
+    textColor: "f0f0f0",
+    darkStartColor: "333333",
+    darkEndColor: "000000",
+    darkTextColor: "f33939",
+  },
+  {
+    threshold: 150,
+    label: "Unhealthy",
+    startColor: "da5340",
+    endColor: "bc2f26",
+    textColor: "eaeaea",
+    darkStartColor: "333333",
+    darkEndColor: "000000",
+    darkTextColor: "f16745",
+  },
+  {
+    threshold: 100,
+    label: "Unhealthy for Sensitive Groups",
+    startColor: "f5ba2a",
+    endColor: "d3781c",
+    textColor: "1f1f1f",
+    darkStartColor: "333333",
+    darkEndColor: "000000",
+    darkTextColor: "f7a021",
+  },
+  {
+    threshold: 50,
+    label: "Moderate",
+    startColor: "f2e269",
+    endColor: "dfb743",
+    textColor: "1f1f1f",
+    darkStartColor: "333333",
+    darkEndColor: "000000",
+    darkTextColor: "f2e269",
+  },
+  {
+    threshold: -20,
+    label: "Good",
+    startColor: "8fec74",
+    endColor: "77c853",
+    textColor: "1f1f1f",
+    darkStartColor: "333333",
+    darkEndColor: "000000",
+    darkTextColor: "6de46d",
+  },
+];
 
-  if (!fileManager.fileExists(cacheFile)) {
-    return undefined;
+/**
+ * main program
+ */
+async function run() {
+  const listWidget = new ListWidget();
+  listWidget.setPadding(10, 15, 10, 10);
+
+  try {
+    const cityId = CITY;
+    if (!cityId) {
+      throw "Please specify a city in script for this widget.";
+    }
+    console.log(`INFO: Using city ID: ${cityId}`);
+
+    const data = await getAqiData(cityId);
+
+    const aqi = data.aqi;
+    const iaqi = data.iaqi;
+    const aqiText = aqi.toString();
+    const level = calculateLevel(aqi);
+    const cityLocation = await getLocation(data);
+
+    renderWidgetBackgroudGradient(level);
+    setWidgetText(level, aqiText, iaqi, cityLocation, data.time_stamp);
+
+    const detailUrl = `https://aqicn.org/city/${CITY}/`;
+    listWidget.url = detailUrl;
+
+  } catch (error) {
+    if (error === 666) {
+      // Handle JSON parsing errors with a custom error layout
+      handleJsonParsingError()
+    } else {
+      handleWidgetRenderingError(error)
+    }
   }
 
-  const contents = fileManager.readString(cacheFile);
-  return JSON.parse(contents);
-}
-
-/**
- * Wite JSON to a local file
- *
- * @param {string} fileName
- * @param {object} data
- */
-function cacheData(fileName, data) {
-  const fileManager = FileManager.local();
-  const cacheDirectory = fileManager.joinPath(fileManager.libraryDirectory(), "aqicn");
-  const cacheFile = fileManager.joinPath(cacheDirectory, fileName);
-
-  if (!fileManager.fileExists(cacheDirectory)) {
-    fileManager.createDirectory(cacheDirectory);
+  if (config.runsInApp) {
+    listWidget.presentSmall();
   }
 
-  const contents = JSON.stringify(data);
-  fileManager.writeString(cacheFile, contents);
+  Script.setWidget(listWidget);
+  Script.complete();
+
+  function handleWidgetRenderingError(error) {
+    console.log(`ERROR: Could not render widget: ${error}`)
+
+    const errorWidgetText = listWidget.addText(`${error}`)
+    errorWidgetText.textColor = Color.red()
+    errorWidgetText.textOpacity = 30
+    errorWidgetText.font = Font.regularSystemFont(10)
+  }
+
+  function handleJsonParsingError() {
+    listWidget.background = new Color('999999')
+    const header = listWidget.addText('Error'.toUpperCase())
+    header.textColor = new Color('000000')
+    header.font = Font.regularSystemFont(11)
+    header.minimumScaleFactor = 0.50
+
+    listWidget.addSpacer(15)
+
+    const wordLevel = listWidget.addText(`Couldn't connect to the server.`)
+    wordLevel.textColor = new Color('000000')
+    wordLevel.font = Font.semiboldSystemFont(15)
+    wordLevel.minimumScaleFactor = 0.3
+  }
+
+  function setWidgetText(level, aqiText, iaqi, cityLocation, timeStamp) {
+    const textColor = Color.dynamic(new Color(level.textColor), new Color(level.darkTextColor))
+
+    setHeaderText();
+    setLevelText();
+    listWidget.addSpacer(5)
+    setAqiStack();
+    listWidget.addSpacer(10)
+    setLocationText();
+    listWidget.addSpacer(2)
+    setUpdateTimeText();
+
+    function setUpdateTimeText() {
+      const updatedAt = new Date(timeStamp).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+      const widgetText = listWidget.addText(`Updated ${updatedAt}`);
+      widgetText.textColor = textColor;
+      widgetText.font = Font.regularSystemFont(9);
+      widgetText.minimumScaleFactor = 0.6;
+    }
+
+    function setLocationText() {
+      const locationText = listWidget.addText(cityLocation);
+      locationText.textColor = textColor;
+      locationText.font = Font.regularSystemFont(14);
+      locationText.minimumScaleFactor = 0.5;
+    }
+
+    /**
+     * This widget part looks like (lines for display only, not visible):
+     * ------------------------
+     * |      |CO:29|PM25:180|
+     * | 180  |NO:37|...     |
+     * |      |O3:8 |        |
+     * -----------------------
+     */
+    function setAqiStack() {
+      // TODO: still can't make layout same as display
+      const aqiStack = listWidget.addStack();
+      const leftContent = aqiStack.addText(aqiText);
+      leftContent.textColor = textColor;
+      leftContent.font = Font.semiboldSystemFont(30);
+
+      let numberOfMeasurements = Object.keys(iaqi).length;
+      if (numberOfMeasurements > 0) {
+        setMeasurementsStack(aqiStack);
+      }
+
+      function setMeasurementsStack(parentStack) {
+        var bracketRemovedString = JSON.stringify(iaqi).replaceAll("\"", "");
+        const kvPattern = /\w+:\d+\.?\d*/g;
+        // array's one element example: 'CO:12'
+        const contentArray = [...bracketRemovedString.matchAll(kvPattern)];
+        if (numberOfMeasurements <= 3) {
+          // Make one vertical stack for most 3 elements
+          setOneVerticalStack(parentStack, contentArray);
+        } else {
+          // Make two vertical stack for most 6 elements
+          const firstStack = parentStack.addStack();
+          setOneVerticalStack(firstStack, contentArray.slice(0, 3));
+          const secondStack = firstStack.addStack();
+          setOneVerticalStack(secondStack, contentArray.slice(3));
+        }
+
+        function setOneVerticalStack(stack, array) {
+          stack.layoutVertically();
+          Object.entries(array).forEach(function (content) {
+            const smallStack = stack.addStack();
+            // content example: ["0", "CO:12"]
+            const smallContent = listWidget.addText(`${content[1]}`);
+            smallContent.textColor = textColor;
+            smallContent.font = Font.semiboldSystemFont(14);
+            smallContent.minimumScaleFactor = 0.5;
+          });
+        }
+      }
+    }
+
+    function setLevelText() {
+      const wordLevel = listWidget.addText(level.label);
+      wordLevel.textColor = textColor;
+      wordLevel.font = Font.semiboldSystemFont(25);
+      wordLevel.minimumScaleFactor = 0.3;
+    }
+
+    function setHeaderText() {
+      const header = listWidget.addText('Air Quality'.toUpperCase());
+      header.textColor = textColor;
+      header.font = Font.regularSystemFont(11);
+      header.minimumScaleFactor = 0.50;
+    }
+
+  }
+
+  function renderWidgetBackgroudGradient(level) {
+    const startColor = Color.dynamic(new Color(level.startColor), new Color(level.darkStartColor))
+    const endColor = Color.dynamic(new Color(level.endColor), new Color(level.darkEndColor))
+
+    const gradient = new LinearGradient()
+    gradient.colors = [startColor, endColor]
+    gradient.locations = [0.0, 1]
+    listWidget.backgroundGradient = gradient
+  }
 }
+
+await run();
 
 /**
  * Fetch content from AQICN
@@ -196,6 +401,78 @@ async function getAqiData(city) {
 }
 
 /**
+ * Wite JSON to a local file
+ *
+ * @param {string} fileName
+ * @param {object} data
+ */
+function cacheData(fileName, data) {
+  const fileManager = FileManager.local();
+  const cacheDirectory = fileManager.joinPath(fileManager.libraryDirectory(), "aqicn");
+  const cacheFile = fileManager.joinPath(cacheDirectory, fileName);
+
+  if (!fileManager.fileExists(cacheDirectory)) {
+    fileManager.createDirectory(cacheDirectory);
+  }
+
+  const contents = JSON.stringify(data);
+  fileManager.writeString(cacheFile, contents);
+}
+
+/**
+ * Get JSON from a local file
+ *
+ * @param {string} fileName
+ * @returns {object}
+ */
+function getCachedData(fileName) {
+  const fileManager = FileManager.local();
+  const cacheDirectory = fileManager.joinPath(fileManager.libraryDirectory(), "aqicn");
+  const cacheFile = fileManager.joinPath(cacheDirectory, fileName);
+
+  if (!fileManager.fileExists(cacheFile)) {
+    return undefined;
+  }
+
+  const contents = fileManager.readString(cacheFile);
+  return JSON.parse(contents);
+}
+
+/**
+ * Calculates the AQI level
+ * based on https://cfpub.epa.gov/airnow/index.cfm?action=aqibasics.aqi#unh
+ *
+ * @param {number|'-'} aqi
+ * @returns {LevelAttribute & { level: number }}
+ */
+function calculateLevel(aqi) {
+  const level = Number(aqi) || 0;
+
+  const {
+    label = "Weird",
+    startColor = "white",
+    endColor = "white",
+    textColor = "black",
+    darkStartColor = "009900",
+    darkEndColor = "007700",
+    darkTextColor = "000000",
+    threshold = -Infinity,
+  } = LEVEL_ATTRIBUTES.find(({ threshold }) => level > threshold) || {};
+
+  return {
+    label,
+    startColor,
+    endColor,
+    textColor,
+    darkStartColor,
+    darkEndColor,
+    darkTextColor,
+    threshold,
+    level,
+  };
+}
+
+/**
  * Fetch a renderable location
  *
  * @param {cityData} data
@@ -241,292 +518,3 @@ async function getGeoData(lat, lon) {
     state: geo[0].administrativeArea,
   };
 }
-
-/** 
- * @type {Array<LevelAttribute>} sorted by threshold desc. 
- */
-const LEVEL_ATTRIBUTES = [
-  {
-    threshold: 300,
-    label: "Hazardous",
-    startColor: "76205d",
-    endColor: "521541",
-    textColor: "f0f0f0",
-    darkStartColor: "333333",
-    darkEndColor: "000000",
-    darkTextColor: "ce4ec5",
-  },
-  {
-    threshold: 200,
-    label: "Very Unhealthy",
-    startColor: "9c2424",
-    endColor: "661414",
-    textColor: "f0f0f0",
-    darkStartColor: "333333",
-    darkEndColor: "000000",
-    darkTextColor: "f33939",
-  },
-  {
-    threshold: 150,
-    label: "Unhealthy",
-    startColor: "da5340",
-    endColor: "bc2f26",
-    textColor: "eaeaea",
-    darkStartColor: "333333",
-    darkEndColor: "000000",
-    darkTextColor: "f16745",
-  },
-  {
-    threshold: 100,
-    label: "Unhealthy for Sensitive Groups",
-    startColor: "f5ba2a",
-    endColor: "d3781c",
-    textColor: "1f1f1f",
-    darkStartColor: "333333",
-    darkEndColor: "000000",
-    darkTextColor: "f7a021",
-  },
-  {
-    threshold: 50,
-    label: "Moderate",
-    startColor: "f2e269",
-    endColor: "dfb743",
-    textColor: "1f1f1f",
-    darkStartColor: "333333",
-    darkEndColor: "000000",
-    darkTextColor: "f2e269",
-  },
-  {
-    threshold: -20,
-    label: "Good",
-    startColor: "8fec74",
-    endColor: "77c853",
-    textColor: "1f1f1f",
-    darkStartColor: "333333",
-    darkEndColor: "000000",
-    darkTextColor: "6de46d",
-  },
-];
-
-/**
- * Calculates the AQI level
- * based on https://cfpub.epa.gov/airnow/index.cfm?action=aqibasics.aqi#unh
- *
- * @param {number|'-'} aqi
- * @returns {LevelAttribute & { level: number }}
- */
-function calculateLevel(aqi) {
-  const level = Number(aqi) || 0;
-
-  const {
-    label = "Weird",
-    startColor = "white",
-    endColor = "white",
-    textColor = "black",
-    darkStartColor = "009900",
-    darkEndColor = "007700",
-    darkTextColor = "000000",
-    threshold = -Infinity,
-  } = LEVEL_ATTRIBUTES.find(({ threshold }) => level > threshold) || {};
-
-  return {
-    label,
-    startColor,
-    endColor,
-    textColor,
-    darkStartColor,
-    darkEndColor,
-    darkTextColor,
-    threshold,
-    level,
-  };
-}
-
-/**
- * Constructs an SFSymbol from the given symbolName
- * SFSymbol is Scriptable's API
- * @param {string} symbolName
- * @returns {object} SFSymbol
- */
-function createSymbol(symbolName) {
-  const symbol = SFSymbol.named(symbolName);
-  symbol.applyFont(Font.systemFont(15));
-  return symbol;
-}
-
-/**
- * main program
- */
-async function run() {
-  const listWidget = new ListWidget();
-  listWidget.setPadding(10, 15, 10, 10);
-
-  try {
-    const cityId = CITY;
-    if (!cityId) {
-      throw "Please specify a city in script for this widget.";
-    }
-    console.log(`INFO: Using city ID: ${cityId}`);
-
-    const data = await getAqiData(cityId);
-
-    const aqi = data.aqi;
-    const iaqi = data.iaqi;
-    const aqiText = aqi.toString();
-    const level = calculateLevel(aqi);
-    const cityLocation = await getLocation(data);
-
-    renderWidgetBackgroudGradient(level);
-    setWidgetText(level, aqiText, iaqi, cityLocation, data.time_stamp);
-
-    const detailUrl = `https://aqicn.org/city/${CITY}/`;
-    listWidget.url = detailUrl;
-
-  } catch (error) {
-    if (error === 666) {
-      // Handle JSON parsing errors with a custom error layout
-      handleJsonParsingError()
-    } else {
-      handleWidgetRenderingError(error)
-    }
-  }
-
-  if (config.runsInApp) {
-    listWidget.presentSmall();
-  }
-
-  Script.setWidget(listWidget);
-  Script.complete();
-
-  function handleWidgetRenderingError(error) {
-    console.log(`ERROR: Could not render widget: ${error}`)
-
-    const errorWidgetText = listWidget.addText(`${error}`)
-    errorWidgetText.textColor = Color.red()
-    errorWidgetText.textOpacity = 30
-    errorWidgetText.font = Font.regularSystemFont(10)
-  }
-
-  function handleJsonParsingError() {
-    listWidget.background = new Color('999999')
-    const header = listWidget.addText('Error'.toUpperCase())
-    header.textColor = new Color('000000')
-    header.font = Font.regularSystemFont(11)
-    header.minimumScaleFactor = 0.50
-
-    listWidget.addSpacer(15)
-
-    const wordLevel = listWidget.addText(`Couldn't connect to the server.`)
-    wordLevel.textColor = new Color('000000')
-    wordLevel.font = Font.semiboldSystemFont(15)
-    wordLevel.minimumScaleFactor = 0.3
-  }
-
-  function setWidgetText(level, aqiText, iaqi, cityLocation, time_stamp) {
-    const textColor = Color.dynamic(new Color(level.textColor), new Color(level.darkTextColor))
-
-    setHeaderText();
-    setLevelText();
-    listWidget.addSpacer(5)
-    setAqiStack();
-    listWidget.addSpacer(10)
-    setLocationText();
-    listWidget.addSpacer(2)
-    setUpdateTimeText();
-
-    function setUpdateTimeText() {
-      const updatedAt = new Date(time_stamp).toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-      });
-      const widgetText = listWidget.addText(`Updated ${updatedAt}`);
-      widgetText.textColor = textColor;
-      widgetText.font = Font.regularSystemFont(9);
-      widgetText.minimumScaleFactor = 0.6;
-    }
-
-    function setLocationText() {
-      const locationText = listWidget.addText(cityLocation);
-      locationText.textColor = textColor;
-      locationText.font = Font.regularSystemFont(14);
-      locationText.minimumScaleFactor = 0.5;
-    }
-
-    /**
-     * This widget part looks like (lines for display only, not visible):
-     * ------------------------
-     * |      |CO:29|PM25:180|
-     * | 180  |NO:37|...     |
-     * |      |O3:8 |        |
-     * -----------------------
-     */
-    function setAqiStack() {
-      // TODO: still can't make layout same as display
-      const aqiStack = listWidget.addStack();
-      const leftContent = aqiStack.addText(aqiText);
-      leftContent.textColor = textColor;
-      leftContent.font = Font.semiboldSystemFont(30);
-
-      let numberOfMeasurements = Object.keys(iaqi).length;
-      if (numberOfMeasurements > 0) {
-        setMeasurementsStack(aqiStack);
-      }
-
-      function setMeasurementsStack(parentStack) {
-        var bracketRemovedString = JSON.stringify(iaqi).replaceAll("\"", "");
-        const kvPattern = /\w+:\d+\.?\d*/g;
-        // array's one element example: 'CO:12'
-        const contentArray = [...bracketRemovedString.matchAll(kvPattern)];
-        if (numberOfMeasurements <= 3) {
-          // Make one vertical stack for most 3 elements
-          setOneVerticalStack(parentStack, contentArray);
-        } else {
-          // Make two vertical stack for most 6 elements
-          const firstStack = parentStack.addStack();
-          setOneVerticalStack(firstStack, contentArray.slice(0, 3));
-          const secondStack = firstStack.addStack();
-          setOneVerticalStack(secondStack, contentArray.slice(3));
-        }
-
-        function setOneVerticalStack(stack, array) {
-          stack.layoutVertically();
-          Object.entries(array).forEach(function (content) {
-            const smallStack = stack.addStack();
-            // content example: ["0", "CO:12"]
-            const smallContent = listWidget.addText(`${content[1]}`);
-            smallContent.textColor = textColor;
-            smallContent.font = Font.semiboldSystemFont(14);
-            smallContent.minimumScaleFactor = 0.5;
-          });
-        }
-      }
-    }
-
-    function setLevelText() {
-      const wordLevel = listWidget.addText(level.label);
-      wordLevel.textColor = textColor;
-      wordLevel.font = Font.semiboldSystemFont(25);
-      wordLevel.minimumScaleFactor = 0.3;
-    }
-
-    function setHeaderText() {
-      const header = listWidget.addText('Air Quality'.toUpperCase());
-      header.textColor = textColor;
-      header.font = Font.regularSystemFont(11);
-      header.minimumScaleFactor = 0.50;
-    }
-
-  }
-
-  function renderWidgetBackgroudGradient(level) {
-    const startColor = Color.dynamic(new Color(level.startColor), new Color(level.darkStartColor))
-    const endColor = Color.dynamic(new Color(level.endColor), new Color(level.darkEndColor))
-
-    const gradient = new LinearGradient()
-    gradient.colors = [startColor, endColor]
-    gradient.locations = [0.0, 1]
-    listWidget.backgroundGradient = gradient
-  }
-}
-
-await run();
