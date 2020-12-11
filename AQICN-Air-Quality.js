@@ -200,22 +200,18 @@ async function run() {
     listWidget.addSpacer(2)
     setUpdateTimeText();
 
-    function setUpdateTimeText() {
-      const updatedAt = new Date(timeStamp).toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-      });
-      const widgetText = listWidget.addText(`Updated ${updatedAt}`);
-      widgetText.textColor = textColor;
-      widgetText.font = Font.regularSystemFont(9);
-      widgetText.minimumScaleFactor = 0.6;
+    function setHeaderText() {
+      const header = listWidget.addText('Air Quality'.toUpperCase());
+      header.textColor = textColor;
+      header.font = Font.regularSystemFont(11);
+      header.minimumScaleFactor = 0.50;
     }
 
-    function setLocationText() {
-      const locationText = listWidget.addText(cityLocation);
-      locationText.textColor = textColor;
-      locationText.font = Font.regularSystemFont(14);
-      locationText.minimumScaleFactor = 0.5;
+    function setLevelText() {
+      const wordLevel = listWidget.addText(level.label);
+      wordLevel.textColor = textColor;
+      wordLevel.font = Font.semiboldSystemFont(25);
+      wordLevel.minimumScaleFactor = 0.3;
     }
 
     /**
@@ -268,20 +264,23 @@ async function run() {
       }
     }
 
-    function setLevelText() {
-      const wordLevel = listWidget.addText(level.label);
-      wordLevel.textColor = textColor;
-      wordLevel.font = Font.semiboldSystemFont(25);
-      wordLevel.minimumScaleFactor = 0.3;
+    function setLocationText() {
+      const locationText = listWidget.addText(cityLocation);
+      locationText.textColor = textColor;
+      locationText.font = Font.regularSystemFont(14);
+      locationText.minimumScaleFactor = 0.5;
     }
 
-    function setHeaderText() {
-      const header = listWidget.addText('Air Quality'.toUpperCase());
-      header.textColor = textColor;
-      header.font = Font.regularSystemFont(11);
-      header.minimumScaleFactor = 0.50;
+    function setUpdateTimeText() {
+      const updatedAt = new Date(timeStamp).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+      const widgetText = listWidget.addText(`Updated ${updatedAt}`);
+      widgetText.textColor = textColor;
+      widgetText.font = Font.regularSystemFont(9);
+      widgetText.minimumScaleFactor = 0.6;
     }
-
   }
 
   function renderWidgetBackgroudGradient(level) {
