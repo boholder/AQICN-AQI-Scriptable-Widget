@@ -162,14 +162,35 @@ async function getAqiData(city) {
   function constructDataForWidget() {
     const data = json.data;
 
-    console.log("INFO: Using data collected by sensor at:");
+    console.log("INFO: Using data collected by sensors at:");
     console.log(data.time.iso);
-    return {
+    let result = {
       aqi: data.aqi,
       city_name: data.city.name,
       geo_lat: data.city.geo[0],
       geo_lon: data.city.geo[1],
       time_stamp: data.time.iso,
+    }
+    // The following measurement information depending on the sensor's function,
+    // i.e. some key may not be present in some Air Monitoring Station's responses.
+    const iaqi = data.iaqi;
+    result.iaqi = {};
+    result.iaqi.CO = iaqi.co ? iaqi.co.v : null;
+    result.iaqi.NO2 = iaqi.no2 ? iaqi.no2.v : null;
+    result.iaqi.O3 = iaqi.o3 ? iaqi.o3.v : null;
+    result.iaqi.PM10 = iaqi.pm10 ? iaqi.pm10.v : null;
+    result.iaqi.PM25 = iaqi.pm25 ? iaqi.pm25.v : null;
+    result.iaqi.SO2 = iaqi.so2 ? iaqi.so2.v : null;
+
+    removeElementsWithNullValue(result.iaqi);
+    return result;
+
+    function removeElementsWithNullValue(elementsMap) {
+      Object.entries(elementsMap).forEach(function (oneElement) {
+        if (!oneElement[1]) {
+          delete elementsMap[oneElement[0]];
+        }
+      });
     }
   }
 }
@@ -349,13 +370,14 @@ async function run() {
 
     const data = await getAqiData(cityId);
 
-    const aqi = data.aqi
+    const aqi = data.aqi;
+    const iaqi = data.iaqi;
     const aqiText = aqi.toString();
     const level = calculateLevel(aqi);
-    const cityLocation = await getLocation(data)
+    const cityLocation = await getLocation(data);
 
-    renderWidgetBackgroudGradient(level)
-    setWidgetText(level, aqiText, cityLocation, data)
+    renderWidgetBackgroudGradient(level);
+    setWidgetText(level, aqiText, iaqi, cityLocation, data.time_stamp);
 
     const detailUrl = `https://aqicn.org/city/${CITY}/`;
     listWidget.url = detailUrl;
@@ -400,42 +422,100 @@ async function run() {
     wordLevel.minimumScaleFactor = 0.3
   }
 
-  function setWidgetText(level, aqiText, cityLocation, data) {
+  function setWidgetText(level, aqiText, iaqi, cityLocation, time_stamp) {
     const textColor = Color.dynamic(new Color(level.textColor), new Color(level.darkTextColor))
-    const header = listWidget.addText('Air Quality'.toUpperCase())
-    header.textColor = textColor
-    header.font = Font.regularSystemFont(11)
-    header.minimumScaleFactor = 0.50
 
-    const wordLevel = listWidget.addText(level.label)
-    wordLevel.textColor = textColor
-    wordLevel.font = Font.semiboldSystemFont(25)
-    wordLevel.minimumScaleFactor = 0.3
-
+    setHeaderText();
+    setLevelText();
     listWidget.addSpacer(5)
-
-    const scoreStack = listWidget.addStack()
-    const content = scoreStack.addText(aqiText)
-    content.textColor = textColor
-    content.font = Font.semiboldSystemFont(30)
-
+    setAqiStack();
     listWidget.addSpacer(10)
-
-    const locationText = listWidget.addText(cityLocation)
-    locationText.textColor = textColor
-    locationText.font = Font.regularSystemFont(14)
-    locationText.minimumScaleFactor = 0.5
-
+    setLocationText();
     listWidget.addSpacer(2)
+    setUpdateTimeText();
 
-    const updatedAt = new Date(data.time_stamp).toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-    })
-    const widgetText = listWidget.addText(`Updated ${updatedAt}`)
-    widgetText.textColor = textColor
-    widgetText.font = Font.regularSystemFont(9)
-    widgetText.minimumScaleFactor = 0.6
+    function setUpdateTimeText() {
+      const updatedAt = new Date(time_stamp).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+      const widgetText = listWidget.addText(`Updated ${updatedAt}`);
+      widgetText.textColor = textColor;
+      widgetText.font = Font.regularSystemFont(9);
+      widgetText.minimumScaleFactor = 0.6;
+    }
+
+    function setLocationText() {
+      const locationText = listWidget.addText(cityLocation);
+      locationText.textColor = textColor;
+      locationText.font = Font.regularSystemFont(14);
+      locationText.minimumScaleFactor = 0.5;
+    }
+
+    /**
+     * This widget part looks like (lines for display only, not visible):
+     * ------------------------
+     * |      |CO:29|PM25:180|
+     * | 180  |NO:37|...     |
+     * |      |O3:8 |        |
+     * -----------------------
+     */
+    function setAqiStack() {
+      // TODO: still can't make layout same as display
+      const aqiStack = listWidget.addStack();
+      const leftContent = aqiStack.addText(aqiText);
+      leftContent.textColor = textColor;
+      leftContent.font = Font.semiboldSystemFont(30);
+
+      let numberOfMeasurements = Object.keys(iaqi).length;
+      if (numberOfMeasurements > 0) {
+        setMeasurementsStack(aqiStack);
+      }
+
+      function setMeasurementsStack(parentStack) {
+        var bracketRemovedString = JSON.stringify(iaqi).replaceAll("\"", "");
+        const kvPattern = /\w+:\d+\.?\d*/g;
+        // array's one element example: 'CO:12'
+        const contentArray = [...bracketRemovedString.matchAll(kvPattern)];
+        if (numberOfMeasurements <= 3) {
+          // Make one vertical stack for most 3 elements
+          setOneVerticalStack(parentStack, contentArray);
+        } else {
+          // Make two vertical stack for most 6 elements
+          const firstStack = parentStack.addStack();
+          setOneVerticalStack(firstStack, contentArray.slice(0, 3));
+          const secondStack = firstStack.addStack();
+          setOneVerticalStack(secondStack, contentArray.slice(3));
+        }
+
+        function setOneVerticalStack(stack, array) {
+          stack.layoutVertically();
+          Object.entries(array).forEach(function (content) {
+            const smallStack = stack.addStack();
+            // content example: ["0", "CO:12"]
+            const smallContent = listWidget.addText(`${content[1]}`);
+            smallContent.textColor = textColor;
+            smallContent.font = Font.semiboldSystemFont(14);
+            smallContent.minimumScaleFactor = 0.5;
+          });
+        }
+      }
+    }
+
+    function setLevelText() {
+      const wordLevel = listWidget.addText(level.label);
+      wordLevel.textColor = textColor;
+      wordLevel.font = Font.semiboldSystemFont(25);
+      wordLevel.minimumScaleFactor = 0.3;
+    }
+
+    function setHeaderText() {
+      const header = listWidget.addText('Air Quality'.toUpperCase());
+      header.textColor = textColor;
+      header.font = Font.regularSystemFont(11);
+      header.minimumScaleFactor = 0.50;
+    }
+
   }
 
   function renderWidgetBackgroudGradient(level) {
