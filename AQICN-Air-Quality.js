@@ -136,15 +136,10 @@ async function run() {
     console.log(`INFO: Using city ID: ${cityId}`);
 
     const data = await getAqiData(cityId);
-
-    const aqi = data.aqi;
-    const iaqi = data.iaqi;
-    const aqiText = aqi.toString();
-    const level = calculateLevel(aqi);
-    const cityLocation = await getLocation(data);
+    const level = calculateLevel(data.aqi);
 
     renderWidgetBackgroudGradient(level);
-    setWidgetText(level, aqiText, iaqi, cityLocation, data.time_stamp);
+    await setWidgetText(data, level);
 
     const detailUrl = `https://aqicn.org/city/${CITY}/`;
     listWidget.url = detailUrl;
@@ -189,7 +184,11 @@ async function run() {
     wordLevel.minimumScaleFactor = 0.3
   }
 
-  function setWidgetText(level, aqiText, iaqi, cityLocation, timeStamp) {
+  async function setWidgetText(data, level) {
+    const iaqi = data.iaqi;
+    const aqiText = data.aqi.toString();
+    const cityLocation = await getLocation(data);
+    const timeStamp = data.time_stamp;
     const textColor = Color.dynamic(new Color(level.textColor), new Color(level.darkTextColor))
 
     setHeaderText();
