@@ -225,17 +225,17 @@ async function run() {
      */
     function setAqiStack() {
       const aqiStack = listWidget.addStack();
-      aqiStack.centerAlignContent();
 
       let leftContentFontSize = 30;
-      let leftContentMininumScaleFactor = 1;
+      let leftContentMinimumScaleFactor = 0.8;
       let detailContentFontSize = 10;
-      let stackSpace = 10;
+      let detailContentMinimumScaleFactor = 0.9;
+      let stackSpace = 5;
       let detailSpace = 5;
 
       // Set smaller space and font size if AQI value is 3-digits
       if (data.aqi >= 100) {
-        leftContentMininumScaleFactor = 0.7;
+        leftContentMinimumScaleFactor = 0.7;
         detailContentFontSize = 8;
         stackSpace = 1;
         detailSpace = 2;
@@ -244,7 +244,7 @@ async function run() {
       const leftContent = aqiStack.addText(aqiText);
       leftContent.textColor = textColor;
       leftContent.font = Font.semiboldSystemFont(leftContentFontSize);
-      leftContent.minimumScaleFactor = leftContentMininumScaleFactor;
+      leftContent.minimumScaleFactor = leftContentMinimumScaleFactor;
 
       let numberOfMeasurements = Object.keys(iaqi).length;
       if (numberOfMeasurements > 0) {
@@ -276,6 +276,7 @@ async function run() {
             const detailContent = detailStack.addText(`${content[1]}`);
             detailContent.textColor = textColor;
             detailContent.font = Font.regularSystemFont(detailContentFontSize);
+            detailContent.minimumScaleFactor = detailContentMinimumScaleFactor;
           });
         }
       }
