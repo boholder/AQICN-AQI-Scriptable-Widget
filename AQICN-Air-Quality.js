@@ -215,7 +215,8 @@ async function run() {
     }
 
     /**
-     * This widget part looks like (lines for display only, not visible):
+     * This part of widget looks like:
+     * (lines for display only, not visible in widget)
      * ------------------------
      * |      |CO:29|PM25:180|
      * | 180  |NO:37|...     |
@@ -223,42 +224,58 @@ async function run() {
      * -----------------------
      */
     function setAqiStack() {
-      // TODO: still can't make layout same as display
       const aqiStack = listWidget.addStack();
+      aqiStack.centerAlignContent();
+
+      let leftContentFontSize = 30;
+      let leftContentMininumScaleFactor = 1;
+      let detailContentFontSize = 10;
+      let stackSpace = 10;
+      let detailSpace = 5;
+
+      // Set smaller space and font size if AQI value is 3-digits
+      if (data.aqi >= 100) {
+        leftContentMininumScaleFactor = 0.7;
+        detailContentFontSize = 8;
+        stackSpace = 1;
+        detailSpace = 2;
+      }
+
       const leftContent = aqiStack.addText(aqiText);
       leftContent.textColor = textColor;
-      leftContent.font = Font.semiboldSystemFont(30);
+      leftContent.font = Font.semiboldSystemFont(leftContentFontSize);
+      leftContent.minimumScaleFactor = leftContentMininumScaleFactor;
 
       let numberOfMeasurements = Object.keys(iaqi).length;
       if (numberOfMeasurements > 0) {
-        setMeasurementsStack(aqiStack);
+        setDetailStack(aqiStack);
       }
 
-      function setMeasurementsStack(parentStack) {
+      function setDetailStack(parentStack) {
         var bracketRemovedString = JSON.stringify(iaqi).replaceAll("\"", "");
         const kvPattern = /\w+:\d+\.?\d*/g;
         // array's one element example: 'CO:12'
         const contentArray = [...bracketRemovedString.matchAll(kvPattern)];
+        parentStack.addSpacer(stackSpace);
+
         if (numberOfMeasurements <= 3) {
           // Make one vertical stack for most 3 elements
-          setOneVerticalStack(parentStack, contentArray);
+          setOneDetailStack(parentStack, contentArray);
         } else {
           // Make two vertical stack for most 6 elements
-          const firstStack = parentStack.addStack();
-          setOneVerticalStack(firstStack, contentArray.slice(0, 3));
-          const secondStack = firstStack.addStack();
-          setOneVerticalStack(secondStack, contentArray.slice(3));
+          setOneDetailStack(parentStack, contentArray.slice(0, 3));
+          parentStack.addSpacer(detailSpace);
+          setOneDetailStack(parentStack, contentArray.slice(3));
         }
 
-        function setOneVerticalStack(stack, array) {
-          stack.layoutVertically();
+        function setOneDetailStack(parentStack, array) {
+          const detailStack = parentStack.addStack();
+          detailStack.layoutVertically();
           Object.entries(array).forEach(function (content) {
-            const smallStack = stack.addStack();
             // content example: ["0", "CO:12"]
-            const smallContent = listWidget.addText(`${content[1]}`);
-            smallContent.textColor = textColor;
-            smallContent.font = Font.semiboldSystemFont(14);
-            smallContent.minimumScaleFactor = 0.5;
+            const detailContent = detailStack.addText(`${content[1]}`);
+            detailContent.textColor = textColor;
+            detailContent.font = Font.regularSystemFont(detailContentFontSize);
           });
         }
       }
