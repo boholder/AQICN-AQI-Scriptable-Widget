@@ -1,6 +1,6 @@
 # AQICN-AQI-Scriptable-Widget
 
-<img src="https://sixcolors.com/wp-content/uploads/2020/10/widget-latest.jpeg" width="600" />
+<img src="https://i.ibb.co/MsY6Xcn/preview.png" />
 
 Modification based on original script which is forked.
 It only works normally on the dedicated APP, "Scriptable", in the Apple Store,
