@@ -27,19 +27,19 @@ const API_URL = "https://api.waqi.info/feed/"
 // Get city id from browsing <https://aqicn.org/city/city_name_lowercase>,
 // goto "Download the real-time Air Quality Index Widget for:" column,
 // click "iPhone & iPad" button, city id is in the popup's text.
-const CITY = `cityNameOrCityId`
+var cityId = `cityNameOrCityId`
+if (args.widgetParameter) {
+  cityId = args.widgetParameter;
+}
 
 // You need to register a token for free with your email to call the API.
 // <https://aqicn.org/data-platform/token/>
 const TOKEN = "yourToken"
 
 // If you are in a network environment where the API cannot be requested,
-// set the request response waiting time (in seconds) from the Apple Widget 
+// set the request response waiting time (in seconds)
 // to end the request awaiting early.
 var queryTimeOut = 60;
-if (args.widgetParameter) {
-  queryTimeOut = args.widgetParameter;
-}
 
 /**
  * Widget attributes: AQI level threshold, text label, gradient start and end colors, text color
@@ -129,7 +129,7 @@ async function run() {
   listWidget.setPadding(10, 15, 10, 10);
 
   try {
-    const cityId = CITY;
+    const cityId = cityId;
     if (!cityId) {
       throw "Please specify a city in script for this widget.";
     }
@@ -141,7 +141,7 @@ async function run() {
     renderWidgetBackgroudGradient(level);
     await setWidgetText(data, level);
 
-    const detailUrl = `https://aqicn.org/city/${CITY}/`;
+    const detailUrl = `https://aqicn.org/city/${cityId}/`;
     listWidget.url = detailUrl;
 
   } catch (error) {
